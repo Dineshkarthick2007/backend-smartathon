@@ -6,6 +6,7 @@ const irrigationController = require('../controllers/irrigationController');
 router.get('/state/:fieldId', irrigationController.getRecommendation);
 router.get('/fields', irrigationController.getAllFields);
 router.post('/field', irrigationController.addField);
+router.delete('/field/:fieldId', irrigationController.deleteField);
 router.post('/seed', irrigationController.seedCrops);
 
 module.exports = router;

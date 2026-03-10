@@ -1,109 +1,10 @@
-const IrrigationState = require('../models/IrrigationState');
-const Crop = require('../models/Crop');
-const { generateIrrigationReport } = require('../services/irrigationEngine');
+const mongoose = require('mongoose');
+const Crop = require('./models/Crop');
+require('dotenv').config();
 
-/**
- * Controller to handle GET /api/irrigation/state/:fieldId
- */
-const getRecommendation = async (req, res) => {
-    try {
-        const fieldId = req.params.fieldId;
-        const state = await IrrigationState.findOne({ fieldId });
-        if (!state) return res.status(404).json({ error: `No field found with ID ${fieldId}` });
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin2005:wG22K6A7UvWdijtb@cluster1.qndf8.mongodb.net/login?retryWrites=true&w=majority&appName=Cluster1';
 
-        const crop = await Crop.findOne({ name: { $regex: new RegExp(`^${state.cropName}$`, 'i') } });
-        if (!crop) return res.status(404).json({ error: `No crop found with name ${state.cropName}` });
-
-        const report = await generateIrrigationReport(state, crop);
-        return res.status(200).json({ crop: state.cropName, ...report });
-    } catch (error) {
-        console.error('Error in getRecommendation:', error.message);
-        return res.status(500).json({ error: 'Internal Server Error' });
-    }
-};
-
-/**
- * Controller to handle GET /api/irrigation/fields
- */
-const getAllFields = async (req, res) => {
-    try {
-        const { userEmail } = req.query;
-        if (!userEmail) {
-            return res.status(400).json({ error: 'userEmail is required' });
-        }
-        const fields = await IrrigationState.find({ userEmail });
-        return res.status(200).json(fields);
-    } catch (error) {
-        return res.status(500).json({ error: 'Internal Server Error' });
-    }
-};
-
-/**
- * Controller to handle POST /api/irrigation/field
- */
-const addField = async (req, res) => {
-    try {
-        const { fieldId, userEmail, cropName, plantingDate, soilType, latitude, longitude } = req.body;
-
-        if (!userEmail) {
-            return res.status(400).json({ error: 'userEmail is required' });
-        }
-
-        let fieldCapacity, wiltingPoint;
-        if (soilType.toLowerCase().includes('clay')) {
-            fieldCapacity = 0.40; wiltingPoint = 0.20;
-        } else if (soilType.toLowerCase().includes('sand')) {
-            fieldCapacity = 0.15; wiltingPoint = 0.05;
-        } else {
-            fieldCapacity = 0.30; wiltingPoint = 0.12; // Loam default
-        }
-
-        const newState = new IrrigationState({
-            fieldId: fieldId || `field_${Date.now()}`,
-            userEmail,
-            cropName,
-            plantingDate: plantingDate || new Date(),
-            soilType,
-            fieldCapacity,
-            wiltingPoint,
-            rootZoneDepth: 0.6, // Defaulting to 0.6m
-            currentSoilMoisture: fieldCapacity, // Start at full capacity
-            lastIrrigationMM: 0,
-            lastIrrigationDate: new Date(),
-            latitude: latitude || 11.1271,
-            longitude: longitude || 78.6569
-        });
-
-        await newState.save();
-        return res.status(201).json(newState);
-    } catch (error) {
-        console.error('Error adding field:', error.message);
-        return res.status(500).json({ error: 'Error adding field' });
-    }
-};
-
-/**
- * Controller to handle DELETE /api/irrigation/field/:fieldId
- */
-const deleteField = async (req, res) => {
-    try {
-        const { fieldId } = req.params;
-        const result = await IrrigationState.findOneAndDelete({ fieldId });
-        if (!result) {
-            return res.status(404).json({ error: `No field found with ID ${fieldId}` });
-        }
-        return res.status(200).json({ message: 'Field deleted successfully' });
-    } catch (error) {
-        console.error('Error deleting field:', error.message);
-        return res.status(500).json({ error: 'Error deleting field' });
-    }
-};
-
-/**
- * Controller to handle POST /api/irrigation/seed
- * (creates required crop documents if they don't exist)
- */
-const seedCrops = async (req, res) => {
+mongoose.connect(MONGO_URI).then(async () => {
     try {
         const crops = [
             { name: "Rice", rootDepth: 1.2, kcInitial: 1.05, kcDevelopment: 1.1, kcMid: 1.2, kcLate: 0.9, growthDaysInitial: 30, growthDaysDevelopment: 40, growthDaysMid: 50, growthDaysLate: 30 },
@@ -127,15 +28,13 @@ const seedCrops = async (req, res) => {
             { name: "Citrus", rootDepth: 1.5, kcInitial: 0.7, kcDevelopment: 0.7, kcMid: 0.7, kcLate: 0.7, growthDaysInitial: 60, growthDaysDevelopment: 90, growthDaysMid: 120, growthDaysLate: 90 },
             { name: "Tea", rootDepth: 1.5, kcInitial: 0.95, kcDevelopment: 0.95, kcMid: 0.95, kcLate: 0.95, growthDaysInitial: 30, growthDaysDevelopment: 60, growthDaysMid: 180, growthDaysLate: 90 }
         ];
-
         for (const c of crops) {
             await Crop.findOneAndUpdate({ name: { $regex: new RegExp(`^${c.name}$`, 'i') } }, c, { upsert: true, new: true });
         }
-
-        return res.status(200).json({ message: "Seed successful", count: crops.length });
-    } catch (error) {
-        return res.status(500).json({ error: 'Error seeding crops' });
+        console.log("Seeded " + crops.length + " crops");
+        process.exit(0);
+    } catch (e) {
+        console.error(e);
+        process.exit(1);
     }
-};
-
-module.exports = { getRecommendation, getAllFields, addField, deleteField, seedCrops };
+});
