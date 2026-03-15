@@ -11,8 +11,24 @@ const getRecommendation = async (req, res) => {
         const state = await IrrigationState.findOne({ fieldId });
         if (!state) return res.status(404).json({ error: `No field found with ID ${fieldId}` });
 
-        const crop = await Crop.findOne({ name: { $regex: new RegExp(`^${state.cropName}$`, 'i') } });
-        if (!crop) return res.status(404).json({ error: `No crop found with name ${state.cropName}` });
+        // Try to find crop parameters, fallback to a standard profile if not found
+        let crop = await Crop.findOne({ name: { $regex: new RegExp(`^${state.cropName}$`, 'i') } });
+        
+        if (!crop) {
+            console.warn(`[Irrigation] Crop parameters for ${state.cropName} not found. Using standard fallback profile.`);
+            crop = {
+                name: state.cropName,
+                rootDepth: 1.0,
+                kcInitial: 0.4,
+                kcDevelopment: 0.8,
+                kcMid: 1.15,
+                kcLate: 0.6,
+                growthDaysInitial: 25,
+                growthDaysDevelopment: 35,
+                growthDaysMid: 45,
+                growthDaysLate: 25
+            };
+        }
 
         const report = await generateIrrigationReport(state, crop);
         return res.status(200).json({ crop: state.cropName, ...report });
@@ -82,17 +98,29 @@ const addField = async (req, res) => {
     }
 };
 
+const UserCrop = require('../models/UserCrop');
+
 /**
  * Controller to handle DELETE /api/irrigation/field/:fieldId
  */
 const deleteField = async (req, res) => {
     try {
         const { fieldId } = req.params;
-        const result = await IrrigationState.findOneAndDelete({ fieldId });
-        if (!result) {
-            return res.status(404).json({ error: `No field found with ID ${fieldId}` });
+        console.log(`[FullDelete] Deleting data for fieldId (UserCropId): ${fieldId}`);
+        
+        // Delete from BOTH collections to stay clean
+        const resultIrrigation = await IrrigationState.findOneAndDelete({ fieldId });
+        const resultUserCrop = await UserCrop.findByIdAndDelete(fieldId);
+
+        if (!resultIrrigation && !resultUserCrop) {
+            return res.status(404).json({ error: `No field or crop record found with ID ${fieldId}` });
         }
-        return res.status(200).json({ message: 'Field deleted successfully' });
+        
+        return res.status(200).json({ 
+            message: 'All crop and irrigation data deleted successfully',
+            irrigationDeleted: !!resultIrrigation,
+            trackingDeleted: !!resultUserCrop
+        });
     } catch (error) {
         console.error('Error deleting field:', error.message);
         return res.status(500).json({ error: 'Error deleting field' });

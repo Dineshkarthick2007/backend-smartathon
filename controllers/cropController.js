@@ -101,29 +101,78 @@ exports.recommendCrops = async (req, res) => {
 exports.addCrop = async (req, res) => {
     try {
         const { userId, cropName, plantingDate } = req.body;
+        console.log(`[AddCrop] Attempting to add ${cropName} for user ${userId}`);
 
-        const template = await CropTemplate().findOne({ name: cropName });
+        // 1. Try to find template in DB
+        let template = await CropTemplate().findOne({ name: { $regex: new RegExp(`^${cropName}$`, 'i') } });
+        
+        // 2. Fallback Template (matching our recommendation fallback)
         if (!template) {
-            return res.status(404).json({ success: false, message: 'Crop template not found' });
+            console.warn(`[AddCrop] Template for ${cropName} not found in DB. Using internal fallback.`);
+            const fallbacks = {
+                "Rice": { duration_days: 120, stages: [
+                    { name: "Initial", day: 0, icon: "🌱" },
+                    { name: "Development", day: 30, icon: "🌿" },
+                    { name: "Mid-Season", day: 70, icon: "🌾" },
+                    { name: "Late-Season", day: 100, icon: "🍂" },
+                    { name: "Harvest", day: 120, icon: "🧺" }
+                ]},
+                "Maize": { duration_days: 100, stages: [
+                    { name: "Initial", day: 0, icon: "🌱" },
+                    { name: "Growth", day: 20, icon: "🌿" },
+                    { name: "Flowering", day: 55, icon: "🌽" },
+                    { name: "Maturity", day: 85, icon: "🍂" },
+                    { name: "Harvest", day: 100, icon: "🧺" }
+                ]},
+                "Cotton": { duration_days: 160, stages: [
+                    { name: "Sowing", day: 0, icon: "🌱" },
+                    { name: "Vegetative", day: 30, icon: "🌿" },
+                    { name: "Flowering", day: 80, icon: "🌸" },
+                    { name: "Boll Opening", day: 130, icon: "☁️" },
+                    { name: "Harvest", day: 160, icon: "🧺" }
+                ]}
+            };
+            template = fallbacks[cropName] || { 
+                duration_days: 110, 
+                stages: [
+                    { name: "Initial", day: 0, icon: "🌱" },
+                    { name: "Growth", day: 30, icon: "🌿" },
+                    { name: "Mid", day: 60, icon: "🌾" },
+                    { name: "Maturity", day: 90, icon: "🍂" },
+                    { name: "Harvest", day: 110, icon: "🧺" }
+                ] 
+            };
         }
 
-        const harvestDate = moment(plantingDate).add(template.duration_days, 'days').format('YYYY-MM-DD');
+        const harvestDate = moment(plantingDate || new Date()).add(template.duration_days, 'days').format('YYYY-MM-DD');
 
         const newUserCrop = new UserCrop({
             userId,
             crop: cropName,
-            plantingDate,
+            plantingDate: plantingDate || new Date(),
             durationDays: template.duration_days,
             harvestDate,
             stages: template.stages
         });
 
         await newUserCrop.save();
-
+        console.log(`[AddCrop] Success! Created UserCrop with ID: ${newUserCrop._id}`);
         res.status(201).json(newUserCrop);
 
     } catch (error) {
         console.error('Error adding crop:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+exports.deleteCropInstance = async (req, res) => {
+    try {
+        const { cropId } = req.params;
+        console.log(`[DeleteCrop] Deleting crop instance: ${cropId}`);
+        await UserCrop.findByIdAndDelete(cropId);
+        res.status(200).json({ success: true, message: "Crop deleted from tracking" });
+    } catch (error) {
+        console.error('Error deleting crop instance:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
@@ -148,12 +197,16 @@ exports.getCropProgress = async (req, res) => {
 
         // Find current stage
         let currentStageName = "Unknown";
-        // Sort stages by day just in case
-        const sortedStages = [...userCrop.stages].sort((a, b) => a.day - b.day);
+        const stages = userCrop.stages || [];
         
-        for (const stage of sortedStages) {
-            if (daysPassed >= stage.day) {
-                currentStageName = stage.name;
+        if (stages.length > 0) {
+            // Sort stages by day
+            const sortedStages = [...stages].sort((a, b) => a.day - b.day);
+            
+            for (const stage of sortedStages) {
+                if (daysPassed >= stage.day) {
+                    currentStageName = stage.name;
+                }
             }
         }
 
@@ -165,7 +218,7 @@ exports.getCropProgress = async (req, res) => {
             remainingDays: Math.max(0, totalDays - daysPassed),
             progressPercent: parseFloat(progressPercent.toFixed(1)),
             currentStage: currentStageName,
-            stages: userCrop.stages
+            stages: stages
         };
 
         res.status(200).json(response);
