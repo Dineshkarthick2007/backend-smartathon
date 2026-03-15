@@ -10,42 +10,49 @@ exports.recommendCrops = async (req, res) => {
         const currentMonth = date.format('MMMM'); // e.g., "June"
 
         // Fetch all templates
-        const templates = await CropTemplate()().find();
+        const templates = await CropTemplate().find();
 
         const recommendedCrops = templates.map(crop => {
-            // 1. Month Match
-            const monthMatch = crop.planting_months.includes(currentMonth);
+            // Support both snake_case and camelCase from the DB
+            const plantingMonths = crop.planting_months || crop.plantingMonths || [];
+            const soilTypes = crop.soil_types || crop.soilTypes || [];
+            const waterReq = crop.water_requirement || crop.waterRequirement || 'Medium';
+            const duration = crop.duration_days || crop.durationDays || 100;
+
+            // 1. Month Match (case-insensitive)
+            const monthMatch = Array.isArray(plantingMonths) && plantingMonths.some(m => m.toLowerCase() === currentMonth.toLowerCase());
             
-            // 2. Soil Match
-            const soilMatch = crop.soil_types.includes(soilType);
+            // 2. Soil Match (flexible/partial)
+            const soilMatch = Array.isArray(soilTypes) && soilTypes.some(s => 
+                s.toLowerCase().includes(soilType.toLowerCase()) || 
+                soilType.toLowerCase().includes(s.toLowerCase())
+            );
 
-            // If it's a strict filter, we could return null here, but let's calculate scores for all and then filter
-            if (!monthMatch || !soilMatch) return null;
-
-            let soilScore = 40; // Since we filtered, it matches
-            let monthScore = 30; // Since we filtered, it matches
+            // Calculation Scores
+            let soilScore = soilMatch ? 40 : 10;
+            let monthScore = monthMatch ? 30 : 5;
             
             // Water Score
             let waterScore = 0;
             const waterMap = { 'Low': 1, 'Medium': 2, 'High': 3 };
             const userWater = waterMap[waterAvailability] || 0;
-            const cropWater = waterMap[crop.water_requirement] || 0;
+            const cropWater = waterMap[waterReq] || 0;
 
             if (cropWater === userWater) {
                 waterScore = 20;
             } else if (cropWater < userWater) {
                 waterScore = 15;
             } else {
-                waterScore = 5; // partially compatible
+                waterScore = 5; 
             }
 
             // Duration Score
             let durationScore = 0;
-            if (crop.duration_days < 100) {
+            if (duration < 100) {
                 durationScore = 10;
-            } else if (crop.duration_days >= 100 && crop.duration_days <= 150) {
+            } else if (duration >= 100 && duration <= 150) {
                 durationScore = 7;
-            } else if (crop.duration_days > 150 && crop.duration_days <= 200) {
+            } else if (duration > 150 && duration <= 200) {
                 durationScore = 5;
             } else {
                 durationScore = 2;
@@ -53,10 +60,13 @@ exports.recommendCrops = async (req, res) => {
 
             const finalScore = soilScore + monthScore + waterScore + durationScore;
 
+            // Threshold – keep at least decent matches
+            if (finalScore < 30 && !soilMatch && !monthMatch) return null;
+
             return {
                 name: crop.name,
                 accuracy: finalScore,
-                durationDays: crop.duration_days
+                durationDays: duration
             };
         }).filter(item => item !== null);
 
@@ -75,7 +85,7 @@ exports.addCrop = async (req, res) => {
     try {
         const { userId, cropName, plantingDate } = req.body;
 
-        const template = await CropTemplate()().findOne({ name: cropName });
+        const template = await CropTemplate().findOne({ name: cropName });
         if (!template) {
             return res.status(404).json({ success: false, message: 'Crop template not found' });
         }

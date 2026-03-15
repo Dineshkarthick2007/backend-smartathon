@@ -15,7 +15,7 @@ const cropTemplateSchema = new mongoose.Schema({
             day: Number
         }
     ]
-}, { collection: 'crop_data' });
+}, { collection: 'crop_stages' });
 
 // We need to use the specific connection for this model
 module.exports = () => {
