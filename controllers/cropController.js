@@ -46,30 +46,60 @@ exports.recommendCrops = async (req, res) => {
         const results = templates.map(crop => {
             const pMonths = crop.planting_months || crop.plantingMonths || [];
             const sTypes = crop.soil_types || crop.soilTypes || [];
-            const wReq = crop.water_requirement || crop.waterRequirement || 'Medium';
+            const wReq = (crop.water_requirement || crop.waterRequirement || 'Medium').toLowerCase();
+            const userW = waterAvailability.toLowerCase();
 
-            // Very loose matching
+            // Month Match (30%)
             const monthMatch = pMonths.some(m => 
                 m.toLowerCase().includes(currentMonth.toLowerCase().substring(0, 3)) ||
                 currentMonth.toLowerCase().includes(m.toLowerCase().substring(0, 3))
             );
             
-            const soilMatch = sTypes.some(s => 
-                s.toLowerCase().includes(soilType.toLowerCase()) || 
-                soilType.toLowerCase().includes(s.toLowerCase())
-            );
+            // Soil Match (50%) - Enhanced matching
+            const soilMatch = sTypes.some(s => {
+                const sLower = s.toLowerCase();
+                const uLower = soilType.toLowerCase();
+                // Avoid matching just the word "soil"
+                if (sLower === 'soil') return false;
+                return uLower.includes(sLower) || sLower.includes(uLower);
+            });
 
-            // Scoring
-            let score = 20; // Base score
-            if (soilMatch) score += 40;
-            if (monthMatch) score += 30;
+            // Water Match (20%)
+            const waterMap = { 'low': 1, 'medium': 2, 'high': 3 };
+            const cropWLevel = waterMap[wReq] || 2;
+            const userWLevel = waterMap[userW] || 2;
             
-            const waterMap = { 'Low': 1, 'Medium': 2, 'High': 3 };
-            if (waterMap[wReq] === waterMap[waterAvailability]) score += 10;
+            // Logic: High water crop in Low water area = CRITICAL MISMATCH
+            let waterScore = 0;
+            let criticalWaterMismatch = false;
+            
+            if (cropWLevel <= userWLevel) {
+                waterScore = 20; // Perfect or safer
+            } else if (cropWLevel === userWLevel + 1) {
+                waterScore = 10; // Slightly risky
+            } else {
+                waterScore = -30; // Critical mismatch (e.g. High crop in Low water)
+                criticalWaterMismatch = true;
+            }
+
+            // Calculation
+            let finalAccuracy = 0;
+            if (soilMatch) finalAccuracy += 50;
+            if (monthMatch) finalAccuracy += 30;
+            finalAccuracy += waterScore;
+
+            // Penalty for no soil match
+            if (!soilMatch) finalAccuracy -= 20;
+
+            // Cap and ensure non-negative
+            finalAccuracy = Math.max(5, Math.min(finalAccuracy, 98));
+
+            // Veto: If it's a critical water mismatch and soil mismatch, it should be very low
+            if (criticalWaterMismatch && !soilMatch) finalAccuracy = Math.min(finalAccuracy, 15);
 
             return {
                 name: crop.name,
-                accuracy: Math.min(score, 99),
+                accuracy: Math.round(finalAccuracy),
                 durationDays: crop.duration_days || 120
             };
         });
@@ -77,8 +107,9 @@ exports.recommendCrops = async (req, res) => {
         // 3. Sort and Respond
         results.sort((a, b) => b.accuracy - a.accuracy);
 
-        // Always return at least 4 items to ensure UI selection
-        const finalSelection = results.slice(0, 6);
+        // Limit results - don't show garbage
+        const filteredResults = results.filter(r => r.accuracy > 30);
+        const finalSelection = filteredResults.length > 0 ? filteredResults.slice(0, 6) : results.slice(0, 3);
         
         res.status(200).json({ 
             success: true,
