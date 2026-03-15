@@ -19,7 +19,12 @@ const cropTemplateSchema = new mongoose.Schema({
 
 // We need to use the specific connection for this model
 module.exports = () => {
-    const conn = getCropStagesConn();
-    if (!conn) return mongoose.model('CropTemplate', cropTemplateSchema); // Fallback
+    const conn = getCropStagesConn() || mongoose.connection;
+    
+    // Safety check: if model already exists on this connection, return it
+    if (conn.models['CropTemplate']) {
+        return conn.models['CropTemplate'];
+    }
+    
     return conn.model('CropTemplate', cropTemplateSchema);
 };
