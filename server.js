@@ -7,9 +7,10 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./config/db');
+const { connectDB } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const irrigationRoutes = require('./routes/irrigationRoutes');
+const cropRoutes = require('./routes/cropRoutes');
 const { startDailyScheduler } = require('./scheduler/dailyScheduler');
 
 // ─── Connect to MongoDB Atlas ─────────────────────────────────────────────────
@@ -55,6 +56,7 @@ app.get('/health', (req, res) => {
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/irrigation', irrigationRoutes);
+app.use('/api', cropRoutes);
 
 // ─── Start Scheduler ──────────────────────────────────────────────────────────
 startDailyScheduler();

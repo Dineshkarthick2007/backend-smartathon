@@ -1,22 +1,41 @@
 const mongoose = require('mongoose');
 
+let defaultConn;
+let cropStagesConn;
+
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      // These options ensure stable production connections
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000,         // Close sockets after 45s of inactivity
+    defaultConn = await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     });
 
-    console.log(`✅ MongoDB Atlas Connected: ${conn.connection.host}`);
-    console.log(`📦 Database: ${conn.connection.name}`);
+    console.log(`✅ MongoDB Atlas Connected: ${defaultConn.connection.host}`);
+    console.log(`📦 Database: ${defaultConn.connection.name}`);
+    
+    // Create connection to CropStages DB
+    const cropStagesUri = process.env.MONGO_URI.replace('/login', '/CropStages');
+    cropStagesConn = mongoose.createConnection(cropStagesUri, {
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+    });
+
+    cropStagesConn.on('connected', () => {
+        console.log('✅ Connected to CropStages Database');
+    });
+
+    return { 
+        default: defaultConn, 
+        cropStages: cropStagesConn 
+    };
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);
-    process.exit(1); // Exit process with failure
+    process.exit(1);
   }
 };
 
-// Monitor connection events for production reliability
+const getCropStagesConn = () => cropStagesConn;
+
 mongoose.connection.on('disconnected', () => {
   console.warn('⚠️  MongoDB disconnected. Attempting to reconnect...');
 });
@@ -25,4 +44,4 @@ mongoose.connection.on('reconnected', () => {
   console.log('🔄 MongoDB reconnected successfully.');
 });
 
-module.exports = connectDB;
+module.exports = { connectDB, getCropStagesConn };
