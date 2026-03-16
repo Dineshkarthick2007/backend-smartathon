@@ -11,6 +11,7 @@ const { connectDB } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const irrigationRoutes = require('./routes/irrigationRoutes');
 const cropRoutes = require('./routes/cropRoutes');
+const fertilizerRoutes = require('./routes/fertilizerRoutes');
 const { startDailyScheduler } = require('./scheduler/dailyScheduler');
 
 // ─── Connect to MongoDB Atlas ─────────────────────────────────────────────────
@@ -57,6 +58,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/irrigation', irrigationRoutes);
 app.use('/api', cropRoutes);
+app.use('/api/fertilizer', fertilizerRoutes);
 
 // ─── Start Scheduler ──────────────────────────────────────────────────────────
 startDailyScheduler();
