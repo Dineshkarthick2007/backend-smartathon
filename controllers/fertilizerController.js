@@ -16,16 +16,26 @@ exports.getFertilizerRecommendation = async (req, res) => {
         const daysPassed = Math.max(0, today.diff(start, 'days'));
 
         // Fetch recommendations for this crop type
-        const fertilizerData = await Fertilizer().findOne({ 
+        let fertilizerData = await Fertilizer().findOne({ 
             crop: { $regex: new RegExp(`^${userCrop.crop}$`, 'i') } 
         });
 
         if (!fertilizerData) {
-            return res.status(404).json({ 
-                success: false, 
-                message: `No fertilizer recommendations found for ${userCrop.crop}.`,
-                crop: userCrop.crop
-            });
+            console.log(`[FertilizerRec] No specific data for ${userCrop.crop}. Using general fallback.`);
+            // Fallback for missing crops - better UX than "No data found"
+            fertilizerData = {
+                crop: userCrop.crop,
+                recommendations: [
+                    {
+                        stage: "Growth",
+                        day: 0,
+                        fertilizers: [
+                            { name: "Organic Compost", npk: "organic", doseKgPerAcre: 500 },
+                            { name: "General NPK 19-19-19", npk: "19-19-19", doseKgPerAcre: 5 }
+                        ]
+                    }
+                ]
+            };
         }
 
         // Logic to find current and upcoming recommendations
